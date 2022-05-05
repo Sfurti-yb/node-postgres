@@ -62,7 +62,6 @@ class ConnectionParameters {
 
     this.user = val('user', config)
     this.database = val('database', config)
-
     if (this.database === undefined) {
       this.database = this.user
     }
@@ -97,6 +96,15 @@ class ConnectionParameters {
       Object.defineProperty(this.ssl, 'key', {
         enumerable: false,
       })
+    }
+    this.load_balance = val('load_balance', config)
+    this.topology_keys = val('topology_keys', config)
+
+    if (this.topology_keys !== '') {
+      if (!this.load_balance) {
+        //Error or this?
+        this.topology_keys = ''
+      }
     }
 
     // How to negotiate SSL: 'postgres' (default, the traditional SSLRequest
@@ -149,6 +157,8 @@ class ConnectionParameters {
     add(params, this, 'fallback_application_name')
     add(params, this, 'connect_timeout')
     add(params, this, 'options')
+    add(params, this, 'load_balance')
+    add(params, this, 'topology_keys')
 
     const ssl = typeof this.ssl === 'object' ? this.ssl : this.ssl ? { sslmode: this.ssl } : {}
     add(params, ssl, 'sslmode')
