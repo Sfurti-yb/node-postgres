@@ -11,10 +11,10 @@
     "postgresql",
     "rdbms"
   ],
-  "homepage": "https://github.com/brianc/node-postgres",
+  "homepage": "https://github.com/yugabyte/node-postgres",
   "repository": {
     "type": "git",
-    "url": "git://github.com/brianc/node-postgres.git",
+    "url": "git://github.com/yugabyte/node-postgres.git",
     "directory": "packages/pg"
   },
   "author": "Brian Carlson <brian.m.carlson@gmail.com>",
