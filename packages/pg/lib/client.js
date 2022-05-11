@@ -499,7 +499,7 @@ class Client extends EventEmitter {
     return diff >= Client.REFRESING_TIME
   }
 
-  connect(i, callback) {
+  connect(callback) {
     if (!this.connectionParameters.load_balance) {
       return this.nowConnect(callback)
     }
