@@ -9,7 +9,6 @@ const Query = require('./query')
 const defaults = require('./defaults')
 const Connection = require('./connection')
 const crypto = require('./crypto/utils')
-const pg = require('pg')
 const dns = require('dns')
 
 const activeQueryDeprecationNotice = nodeUtils.deprecate(
