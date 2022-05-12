@@ -41,8 +41,6 @@ function parse(str, options = {}) {
     config[entry[0]] = entry[1]
   }
 
-  config.load_balance = config.load_balance === 'true'
-
   config.user = config.user || decodeURIComponent(result.username)
   config.password = config.password || decodeURIComponent(result.password)
   if (result.protocol == 'socket:') {
