@@ -60,7 +60,7 @@ class ServerInfo {
 class Lock {
   constructor() {
     this._locked = false
-    this._ee = new EventEmitter()
+    this._ee = new EventEmitter().setMaxListeners(0)
   }
 
   acquire() {
@@ -90,7 +90,6 @@ const lock = new Lock()
 class Client extends EventEmitter {
   constructor(config) {
     super()
-
     this.connectionParameters = new ConnectionParameters(config)
     this.user = this.connectionParameters.user
     this.database = this.connectionParameters.database
@@ -215,12 +214,22 @@ class Client extends EventEmitter {
     for (let value of hosts) {
       let host = value
       if (this.connectionParameters.topology_keys !== '') {
-        let placementInfoOfHost = Client.hostServerInfo.get(host).placementInfo
+        let placementInfoOfHost
+        if (!this.checkConnectionMapEmpty()) {
+          placementInfoOfHost = Client.hostServerInfo.get(host).placementInfo
+        } else {
+          placementInfoOfHost = hostsList.get(host).placementInfo
+        }
         if (!Client.topologyKeySet.has(placementInfoOfHost)) {
           continue
         }
       }
-      let hostCount = hostsList.get(host) || 0
+      let hostCount
+      if (typeof hostsList.get(host) === 'object') {
+        hostCount = 0
+      } else {
+        hostCount = hostsList.get(host)
+      }
       if (minConnectionCount > hostCount) {
         leastLoadedHosts = []
         minConnectionCount = hostCount
@@ -251,7 +260,7 @@ class Client extends EventEmitter {
     let prevCount = 0
     if (Client.connectionMap.has(this.host)) {
       prevCount = Client.connectionMap.get(this.host)
-    } else {
+    } else if (Client.failedHosts.has(this.host)) {
       let serverInfo = Client.failedHosts.get(this.host)
       Client.hostServerInfo.set(this.host, serverInfo)
       Client.failedHosts.delete(this.host)
@@ -294,7 +303,7 @@ class Client extends EventEmitter {
       }
     }
     if (this.connectionParameters.load_balance) {
-      if (Client.hostServerInfo.size !== 0 && Client.connectionMap.size !== 0) {
+      if (!this.checkConnectionMapEmpty()) {
         this.host = this.getLeastLoadedServer(Client.connectionMap)
       } else {
         this.host = this.getLeastLoadedServer(Client.failedHosts)
@@ -365,9 +374,9 @@ class Client extends EventEmitter {
     client.on('error', () => {
       if (Client.hostServerInfo.has(client.host)) {
         Client.failedHosts.set(client.host, Client.hostServerInfo.get(client.host))
+        Client.connectionMap.delete(client.host)
+        Client.hostServerInfo.delete(client.host)
       }
-      Client.connectionMap.delete(client.host)
-      Client.hostServerInfo.delete(client.host)
       Client.controlClient = undefined
     })
   }
@@ -459,7 +468,20 @@ class Client extends EventEmitter {
       this.createTopologyKeySet()
     }
   }
-
+  checkConnectionMapEmpty() {
+    if (this.connectionParameters.topology_keys === '') {
+      return Client.connectionMap.size === 0
+    }
+    let hosts = Client.connectionMap.keys()
+    for (let value of hosts) {
+      let host = value
+      let placementInfo = Client.hostServerInfo.get(host).placementInfo
+      if (Client.topologyKeySet.has(placementInfo)) {
+        return false
+      }
+    }
+    return true
+  }
   nowConnect(callback) {
     if (callback) {
       if (this.connectionParameters.load_balance) {
@@ -470,18 +492,24 @@ class Client extends EventEmitter {
                 Client.failedHosts.set(this.host, Client.hostServerInfo.get(this.host))
                 Client.connectionMap.delete(this.host)
                 Client.hostServerInfo.delete(this.host)
+              } else if (Client.failedHosts.has(this.host)) {
+                Client.failedHosts.delete(this.host)
+              }
+              if (this.checkConnectionMapEmpty() && Client.failedHosts.size === 0) {
+                lock.release()
+                callback(error)
+                return
               }
               lock.release()
-              // console.log('lock released first by', i)
               this.connect(callback)
+            } else {
+              callback(error)
+              return
             }
-            callback(error)
           } else {
             if (this.connectionParameters.load_balance) {
               lock.release()
               this.incrementConnectionCount()
-              // console.log(Client.connectionMap)
-              // console.log('lock released first by', i)
             }
             callback()
           }
@@ -501,9 +529,15 @@ class Client extends EventEmitter {
               Client.failedHosts.set(this.host, Client.hostServerInfo.get(this.host))
               Client.connectionMap.delete(this.host)
               Client.hostServerInfo.delete(this.host)
+            } else if (Client.failedHosts.has(this.host)) {
+              Client.failedHosts.delete(this.host)
+            }
+            if (this.checkConnectionMapEmpty() && Client.failedHosts.size === 0) {
+              lock.release()
+              reject(error)
+              return
             }
             lock.release()
-            // console.log('lock released first by', i)
             this.connect(callback)
           } else {
             reject(error)
@@ -512,8 +546,6 @@ class Client extends EventEmitter {
           if (this.connectionParameters.load_balance) {
             lock.release()
             this.incrementConnectionCount()
-            // console.log(Client.connectionMap)
-            // console.log('lock released first by', i)
           }
           resolve(this)
         }
@@ -556,7 +588,6 @@ class Client extends EventEmitter {
     }
     lock.acquire().then(() => {
       if (Client.controlClient === undefined) {
-        // console.log('lock acquired first by', i)
         this.getConnection()
           .then(async (res) => {
             Client.controlClient = res
@@ -575,7 +606,6 @@ class Client extends EventEmitter {
       } else {
         if (this.isRefreshRequired() || Client.doHardRefresh) {
           Client.doHardRefresh = false
-          // console.log('lock acquired with refresh by', i)
           this.getServersInfo()
             .then((res) => {
               this.updateMetaData(res.rows)
@@ -585,7 +615,6 @@ class Client extends EventEmitter {
               return this.nowConnect(callback)
             })
         } else {
-          // console.log('lock acquired without refresh by', i)
           return this.nowConnect(callback)
         }
       }
@@ -746,6 +775,13 @@ class Client extends EventEmitter {
   _handleErrorWhileConnecting(err) {
     if (this._connectionError) {
       // TODO(bmc): this is swallowing errors - we shouldn't do this
+      if (this.connectionParameters.load_balance) {
+        if (this._connectionCallback) {
+          return this._connectionCallback(err)
+        }
+        this.emit('error', err)
+        return
+      }
       return
     }
     this._connectionError = true
@@ -1159,7 +1195,6 @@ class Client extends EventEmitter {
         let prevCount = Client.connectionMap.get(this.host)
         if (prevCount > 0) {
           Client.connectionMap.set(this.host, prevCount - 1)
-          // console.log(Client.connectionMap)
         }
         lock.release()
       }
