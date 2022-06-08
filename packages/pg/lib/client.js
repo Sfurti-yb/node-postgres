@@ -10,6 +10,7 @@ const defaults = require('./defaults')
 const Connection = require('./connection')
 const crypto = require('./crypto/utils')
 const dns = require('dns')
+<<<<<<< HEAD
 
 const activeQueryDeprecationNotice = nodeUtils.deprecate(
   () => {},
@@ -47,6 +48,8 @@ function coerceNumberOrDefault(value, defaultValue) {
   }
   return defaultValue
 }
+
+const YB_SERVERS_QUERY = 'SELECT * FROM yb_servers()'
 
 class ServerInfo {
   constructor(hostName, port, placementInfo, public_ip) {
@@ -95,8 +98,8 @@ class Client extends EventEmitter {
     this.database = this.connectionParameters.database
     this.port = this.connectionParameters.port
     this.host = this.connectionParameters.host
-    this.load_balance = this.connectionParameters.load_balance
-    this.topology_keys = this.connectionParameters.topology_keys
+    this.loadBalance = this.connectionParameters.loadBalance
+    this.topologyKeys = this.connectionParameters.topologyKeys
     this.connectionString = config
     // "hiding" the password so it doesn't show up in stack traces
     // or if the client is console.logged
@@ -146,6 +149,8 @@ class Client extends EventEmitter {
     this.ssl = this.connectionParameters.ssl || false
     this.sslNegotiation = this.connectionParameters.sslnegotiation || 'postgres'
     this.config = config
+    // prevHostIfUsePublic will store the private host name before replacing
+    // it with public IP for making the connection
     this.prevHostIfUsePublic = this.host
     this.urlHost = this.host
     // As with Password, make SSL->Key (the private key) non-enumerable.
@@ -214,7 +219,7 @@ class Client extends EventEmitter {
     let hosts = hostsList.keys()
     for (let value of hosts) {
       let host = value
-      if (this.connectionParameters.topology_keys !== '') {
+      if (this.connectionParameters.topologyKeys !== '') {
         let placementInfoOfHost
         if (!this.checkConnectionMapEmpty()) {
           placementInfoOfHost = Client.hostServerInfo.get(host).placementInfo
@@ -252,11 +257,9 @@ class Client extends EventEmitter {
     if (keyParts.length !== 3) {
       return false
     }
-    if (!Client.placementInfoHostMap.has(key)) {
-      return false
-    }
-    return true
+    return Client.placementInfoHostMap.has(key)
   }
+
   incrementConnectionCount() {
     let prevCount = 0
     let host = this.host
@@ -272,9 +275,10 @@ class Client extends EventEmitter {
     }
     Client.connectionMap.set(host, prevCount + 1)
   }
+
   _connect(callback) {
     const self = this
-    if (this.connectionParameters.load_balance && this._connecting) {
+    if (this.connectionParameters.loadBalance && this._connecting) {
       this.connection =
         this.config.connection ||
         new Connection({
@@ -307,7 +311,7 @@ class Client extends EventEmitter {
         this.connectionTimeoutHandle.unref()
       }
     }
-    if (this.connectionParameters.load_balance) {
+    if (this.connectionParameters.loadBalance) {
       if (!this.checkConnectionMapEmpty() && Client.hostServerInfo.size) {
         this.host = this.getLeastLoadedServer(Client.connectionMap)
         this.port = Client.hostServerInfo.get(this.host).port
@@ -397,10 +401,10 @@ class Client extends EventEmitter {
       addresses = res
     })
     client.host = addresses[0].address // If both resolved then - IPv6 else IPv4
-    client.load_balance = false
-    client.connectionParameters.load_balance = false
-    client.topology_keys = ''
-    client.connectionParameters.topology_keys = ''
+    client.loadBalance = false
+    client.connectionParameters.loadBalance = false
+    client.topologyKeys = ''
+    client.connectionParameters.topologyKeys = ''
     if (Client.failedHosts.has(client.host)) {
       let upHostsList = Client.hostServerInfo.keys()
       let upHost = upHostsList.next().value
@@ -437,12 +441,12 @@ class Client extends EventEmitter {
     var client = Client.controlClient
     var result
     await client
-      .query('SELECT * FROM yb_servers()')
+      .query(YB_SERVERS_QUERY)
       .then((res) => {
         result = res
       })
       .catch((err) => {
-        this.getConnection(this.connectionString).then(async (res) => {
+        this.getConnection().then(async (res) => {
           Client.controlClient = res
           await this.getServersInfo()
         })
@@ -475,25 +479,30 @@ class Client extends EventEmitter {
       Client.connectionMap.set(eachServer.host, 0)
     })
   }
+
   createTopologyKeySet() {
-    var seperatedKeys = this.connectionParameters.topology_keys.split(',')
+    var seperatedKeys = this.connectionParameters.topologyKeys.split(',')
     for (let idx = 0; idx < seperatedKeys.length; idx++) {
       let key = seperatedKeys[idx]
       if (this.isValidKey(key)) {
         Client.topologyKeySet.add(key)
+      } else {
+        // Error if not valid
       }
     }
   }
+
   createMetaData(data) {
     this.createServersList(data)
     Client.lastTimeMetaDataFetched = new Date().getTime() / 1000
     this.createConnectionMap(data)
-    if (this.connectionParameters.topology_keys !== '') {
+    if (this.connectionParameters.topologyKeys !== '') {
       this.createTopologyKeySet()
     }
   }
+
   checkConnectionMapEmpty() {
-    if (this.connectionParameters.topology_keys === '') {
+    if (this.connectionParameters.topologyKeys === '') {
       return Client.connectionMap.size === 0
     }
     let hosts = Client.connectionMap.keys()
@@ -506,12 +515,13 @@ class Client extends EventEmitter {
     }
     return true
   }
+
   nowConnect(callback) {
     if (callback) {
-      if (this.connectionParameters.load_balance) {
+      if (this.connectionParameters.loadBalance) {
         this._connect((error) => {
           if (error) {
-            if (this.connectionParameters.load_balance) {
+            if (this.connectionParameters.loadBalance) {
               if (Client.hostServerInfo.has(this.host)) {
                 Client.failedHosts.set(this.host, Client.hostServerInfo.get(this.host))
                 Client.connectionMap.delete(this.host)
@@ -521,19 +531,19 @@ class Client extends EventEmitter {
               }
               if (this.checkConnectionMapEmpty() && Client.failedHosts.size === 0) {
                 lock.release()
-                // try with url host and mark that connection type as non-load_balanced
+                // try with url host and mark that connection type as non-loadBalanced
                 this.host = this.urlHost
                 this.connectionParameters.host = this.host
-                this.connectionParameters.load_balance = false
+                this.connectionParameters.loadBalance = false
                 this.connection =
-                this.config.connection ||
-                new Connection({
-                  stream: this.config.stream,
-                  ssl: this.connectionParameters.ssl,
-                  keepAlive: this.config.keepAlive || false,
-                  keepAliveInitialDelayMillis: this.config.keepAliveInitialDelayMillis || 0,
-                  encoding: this.connectionParameters.client_encoding || 'utf8',
-                })
+                  this.config.connection ||
+                  new Connection({
+                    stream: this.config.stream,
+                    ssl: this.connectionParameters.ssl,
+                    keepAlive: this.config.keepAlive || false,
+                    keepAliveInitialDelayMillis: this.config.keepAliveInitialDelayMillis || 0,
+                    encoding: this.connectionParameters.client_encoding || 'utf8',
+                  })
                 this._connecting = false
                 Client.hostServerInfo.clear()
                 Client.connectionMap.clear()
@@ -547,7 +557,7 @@ class Client extends EventEmitter {
               return
             }
           } else {
-            if (this.connectionParameters.load_balance) {
+            if (this.connectionParameters.loadBalance) {
               lock.release()
               this.incrementConnectionCount()
             }
@@ -564,7 +574,7 @@ class Client extends EventEmitter {
     return new this._Promise((resolve, reject) => {
       this._connect((error) => {
         if (error) {
-          if (this.connectionParameters.load_balance) {
+          if (this.connectionParameters.loadBalance) {
             if (Client.hostServerInfo.has(this.host)) {
               Client.failedHosts.set(this.host, Client.hostServerInfo.get(this.host))
               Client.connectionMap.delete(this.host)
@@ -576,16 +586,16 @@ class Client extends EventEmitter {
               lock.release()
               this.host = this.urlHost
               this.connectionParameters.host = this.host
-              this.connectionParameters.load_balance = false
+              this.connectionParameters.loadBalance = false
               this.connection =
-              this.config.connection ||
-              new Connection({
-                stream: this.config.stream,
-                ssl: this.connectionParameters.ssl,
-                keepAlive: this.config.keepAlive || false,
-                keepAliveInitialDelayMillis: this.config.keepAliveInitialDelayMillis || 0,
-                encoding: this.connectionParameters.client_encoding || 'utf8',
-              })
+                this.config.connection ||
+                new Connection({
+                  stream: this.config.stream,
+                  ssl: this.connectionParameters.ssl,
+                  keepAlive: this.config.keepAlive || false,
+                  keepAliveInitialDelayMillis: this.config.keepAliveInitialDelayMillis || 0,
+                  encoding: this.connectionParameters.client_encoding || 'utf8',
+                })
               this._connecting = false
               Client.hostServerInfo.clear()
               Client.connectionMap.clear()
@@ -598,7 +608,7 @@ class Client extends EventEmitter {
             reject(error)
           }
         } else {
-          if (this.connectionParameters.load_balance) {
+          if (this.connectionParameters.loadBalance) {
             lock.release()
             this.incrementConnectionCount()
           }
@@ -638,7 +648,7 @@ class Client extends EventEmitter {
   }
 
   connect(callback) {
-    if (!this.connectionParameters.load_balance) {
+    if (!this.connectionParameters.loadBalance) {
       return this.nowConnect(callback)
     }
     lock.acquire().then(() => {
@@ -660,7 +670,6 @@ class Client extends EventEmitter {
           })
       } else {
         if (this.isRefreshRequired() || Client.doHardRefresh) {
-          Client.doHardRefresh = false
           this.getServersInfo()
             .then((res) => {
               this.updateMetaData(res.rows)
@@ -830,7 +839,7 @@ class Client extends EventEmitter {
   _handleErrorWhileConnecting(err) {
     if (this._connectionError) {
       // TODO(bmc): this is swallowing errors - we shouldn't do this
-      if (this.connectionParameters.load_balance) {
+      if (this.connectionParameters.loadBalance) {
         if (this._connectionCallback) {
           return this._connectionCallback(err)
         }
@@ -1246,7 +1255,7 @@ class Client extends EventEmitter {
     }
 
     lock.acquire().then(() => {
-      if (this.connectionParameters.load_balance) {
+      if (this.connectionParameters.loadBalance) {
         let prevCount = Client.connectionMap.get(this.host)
         if (prevCount > 0) {
           Client.connectionMap.set(this.host, prevCount - 1)
