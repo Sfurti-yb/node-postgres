@@ -99,6 +99,7 @@ class ConnectionParameters {
     }
     this.loadBalance = val('loadBalance', config)
     this.topologyKeys = val('topologyKeys', config)
+    this.ybServersRefreshInterval = val('ybServersRefreshInterval', config)
 
     if (typeof this.loadBalance === 'string') {
       this.loadBalance = this.loadBalance === 'true'
@@ -107,6 +108,13 @@ class ConnectionParameters {
       if (!this.loadBalance) {
         throw new Error(' You need to enable Load Balance feature to use Topology Aware! ')
       }
+    }
+    this.ybServersRefreshInterval = Number(this.ybServersRefreshInterval)
+    if(isNaN(this.ybServersRefreshInterval) || !Number.isInteger(this.ybServersRefreshInterval)){
+      throw new Error(' You need to Enter valid Refresh Interval ')
+    }
+    if(this.ybServersRefreshInterval<0 || this.ybServersRefreshInterval>600){
+      this.ybServersRefreshInterval = 300
     }
 
     // How to negotiate SSL: 'postgres' (default, the traditional SSLRequest
@@ -120,7 +128,6 @@ class ConnectionParameters {
     if (this.sslnegotiation === 'direct' && !this.ssl) {
       throw new Error('sslnegotiation=direct requires SSL to be enabled')
     }
-
     this.client_encoding = val('client_encoding', config)
     this.replication = val('replication', config)
     // a domain socket begins with '/'
@@ -161,6 +168,7 @@ class ConnectionParameters {
     add(params, this, 'options')
     add(params, this, 'loadBalance')
     add(params, this, 'topologyKeys')
+    add(params, this, 'ybServersRefreshInterval')
 
     const ssl = typeof this.ssl === 'object' ? this.ssl : this.ssl ? { sslmode: this.ssl } : {}
     add(params, ssl, 'sslmode')
