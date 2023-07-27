@@ -10,7 +10,6 @@ const defaults = require('./defaults')
 const Connection = require('./connection')
 const crypto = require('./crypto/utils')
 const dns = require('dns')
-<<<<<<< HEAD
 
 const activeQueryDeprecationNotice = nodeUtils.deprecate(
   () => {},
@@ -50,6 +49,7 @@ function coerceNumberOrDefault(value, defaultValue) {
 }
 
 const YB_SERVERS_QUERY = 'SELECT * FROM yb_servers()'
+const DEFAULT_FAILED_HOST_TTL_SECONDS = 5
 
 class ServerInfo {
   constructor(hostName, port, placementInfo, public_ip) {
@@ -172,6 +172,8 @@ class Client extends EventEmitter {
   static connectionMap = new Map()
   // Map of failedHost -> ServerInfo of host
   static failedHosts = new Map()
+  // Map of failedHost -> Time at which host was added to failedHosts Map
+  static failedHostsTime = new Map()
   // Map of placementInfoOfHost -> list of Hosts
   static placementInfoHostMap = new Map()
   // Map of Host -> ServerInfo
@@ -223,8 +225,7 @@ class Client extends EventEmitter {
     let leastLoadedHosts = []
     for (var i = 1; i <= Client.topologyKeyMap.size; i++) {
       let hosts = hostsList.keys()
-      for (let value of hosts) {
-        let host = value
+      for (let host of hosts) {
         let placementInfoOfHost
         if (Client.hostServerInfo.has(host)) {
           placementInfoOfHost = Client.hostServerInfo.get(host).placementInfo
@@ -323,6 +324,7 @@ class Client extends EventEmitter {
       let serverInfo = Client.failedHosts.get(host)
       Client.hostServerInfo.set(host, serverInfo)
       Client.failedHosts.delete(host)
+      Client.failedHostsTime.delete(host)
     }
     Client.connectionMap.set(host, prevCount + 1)
   }
@@ -435,6 +437,8 @@ class Client extends EventEmitter {
     client.on('error', () => {
       if (Client.hostServerInfo.has(client.host)) {
         Client.failedHosts.set(client.host, Client.hostServerInfo.get(client.host))
+        let start = new Date().getTime();
+        Client.failedHostsTime.set(client.host, start)
         Client.connectionMap.delete(client.host)
         Client.hostServerInfo.delete(client.host)
       }
@@ -555,9 +559,23 @@ class Client extends EventEmitter {
   }
 
   createConnectionMap(data) {
+    const currConnectionMap = new Map(Client.connectionMap)
     Client.connectionMap.clear()
     data.forEach((eachServer) => {
-      Client.connectionMap.set(eachServer.host, 0)
+      if(!Client.failedHosts.has(eachServer.host)){
+        if(currConnectionMap.has(eachServer.host)){
+          Client.connectionMap.set(eachServer.host, currConnectionMap.get(eachServer.host))
+        } else {
+          Client.connectionMap.set(eachServer.host, 0)
+        }
+      } else {
+        let start = new Date().getTime();
+        if(start - Client.failedHostsTime.get(eachServer.host) > (DEFAULT_FAILED_HOST_TTL_SECONDS * 1000)){
+          Client.connectionMap.set(eachServer.host, 0)
+          Client.failedHosts.delete(eachServer.host)
+          Client.failedHostsTime.delete(eachServer.host)
+        }
+      }
     })
   }
 
@@ -601,10 +619,13 @@ class Client extends EventEmitter {
             if (this.connectionParameters.loadBalance) {
               if (Client.hostServerInfo.has(this.host)) {
                 Client.failedHosts.set(this.host, Client.hostServerInfo.get(this.host))
+                let start = new Date().getTime();
+                Client.failedHostsTime.set(this.host, start)
                 Client.connectionMap.delete(this.host)
                 Client.hostServerInfo.delete(this.host)
               } else if (Client.failedHosts.has(this.host)) {
                 Client.failedHosts.delete(this.host)
+                Client.failedHostsTime.delete(this.host)
               }
               lock.release()
               this.connect(callback)
@@ -633,10 +654,13 @@ class Client extends EventEmitter {
           if (this.connectionParameters.loadBalance) {
             if (Client.hostServerInfo.has(this.host)) {
               Client.failedHosts.set(this.host, Client.hostServerInfo.get(this.host))
+              let start = new Date().getTime();
+              Client.failedHostsTime.set(this.host, start)
               Client.connectionMap.delete(this.host)
               Client.hostServerInfo.delete(this.host)
             } else if (Client.failedHosts.has(this.host)) {
               Client.failedHosts.delete(this.host)
+              Client.failedHostsTime.delete(this.host)
             }
             lock.release()
             this.connect(callback)
@@ -656,15 +680,22 @@ class Client extends EventEmitter {
 
   updateConnectionMapAfterRefresh() {
     let hostsInfoList = Client.hostServerInfo.keys()
-    for (let value of hostsInfoList) {
-      let eachHost = value
+    for (let eachHost of hostsInfoList) {
       if (!Client.connectionMap.has(eachHost)) {
-        Client.connectionMap.set(eachHost, 0)
+        if(!Client.failedHosts.has(eachHost)){
+          Client.connectionMap.set(eachHost, 0)
+        } else {
+          let start = new Date().getTime();
+          if(start - Client.failedHostsTime.get(eachHost) > (DEFAULT_FAILED_HOST_TTL_SECONDS * 1000)){
+            Client.connectionMap.set(eachHost, 0)
+            Client.failedHosts.delete(eachHost)
+            Client.failedHostsTime.delete(eachHost)
+          }
+        }
       }
     }
     let connectionMapHostList = Client.connectionMap.keys()
-    for (let value of connectionMapHostList) {
-      let eachHost = value
+    for (let eachHost of connectionMapHostList) {
       if (!Client.hostServerInfo.has(eachHost)) {
         Client.connectionMap.delete(eachHost)
       }
