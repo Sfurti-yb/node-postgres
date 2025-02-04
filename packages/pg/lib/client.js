@@ -169,6 +169,8 @@ class Client extends EventEmitter {
   }
   // Control Connection
   static controlClient = undefined
+  // Control Connection host
+  static controlClientHost = ""
   static lastTimeMetaDataFetched = new Date().getTime() / 1000
   // Map of host -> connectionCount
   static connectionMap = new Map()
@@ -427,6 +429,10 @@ class Client extends EventEmitter {
             this._handleErrorEvent(error)
           }
         } else if (!this._connectionError) {
+          if (Client.controlClientHost === this.host && Client.controlClient != undefined) {
+            logger.silly("Control Connection host might be down, marking control connection as undefined")
+            Client.controlClient = undefined
+          }
           this._handleErrorEvent(error)
         }
       }
@@ -447,6 +453,7 @@ class Client extends EventEmitter {
         Client.connectionMap.delete(client.host)
         Client.hostServerInfo.delete(client.host)
       }
+      logger.silly("Control Connection host is down, marking control connection as undefined")
       Client.controlClient = undefined
     })
   }
@@ -500,7 +507,10 @@ class Client extends EventEmitter {
   async getConnection() {
     logger.silly("Creating control connection...")
     let currConnectionString = this.connectionString
-    var client = new Client(currConnectionString)
+    var client = new Client({
+      connectionString: currConnectionString,
+      connectionTimeoutMillis: 10000,
+    });
     this.attachErrorListenerOnClientConnection(client)
     let lookup = util.promisify(dns.lookup)
     let addresses = [{ address: client.host }]
@@ -542,6 +552,7 @@ class Client extends EventEmitter {
         }
       })
     }
+    Client.controlClientHost = client.host
     logger.debug("Created control connection to host " + client.host)
     return client
   }
@@ -551,7 +562,10 @@ class Client extends EventEmitter {
     var client = Client.controlClient
     var result
     await client
-      .query(YB_SERVERS_QUERY)
+      .query({
+        text: YB_SERVERS_QUERY,
+        statement_timeout: 10000, // Timeout after 10 seconds
+      })
       .then((res) => {
         result = res
       })
