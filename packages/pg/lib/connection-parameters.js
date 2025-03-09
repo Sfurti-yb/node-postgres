@@ -100,21 +100,50 @@ class ConnectionParameters {
     this.loadBalance = val('loadBalance', config)
     this.topologyKeys = val('topologyKeys', config)
     this.ybServersRefreshInterval = val('ybServersRefreshInterval', config)
+    this.fallbackToTopologyKeysOnly = val('fallbackToTopologyKeysOnly', config)
+    this.failedHostReconnectDelaySecs = val('failedHostReconnectDelaySecs', config)
 
     if (typeof this.loadBalance === 'string') {
-      this.loadBalance = this.loadBalance === 'true'
+      switch (this.loadBalance.toLowerCase()) {
+        case 'true':
+        case 'any':
+        case 'prefer-primary':
+        case 'prefer-rr':
+        case 'only-primary':
+        case 'only-rr':
+        case 'false':
+          break;
+        default:
+          throw new Error('Invalid loadBalance value: Valid values are only-rr, only-primary, prefer-rr, prefer-primary, any or true');
+      }
+    } else if (typeof this.loadBalance === 'boolean') {
+      if (this.loadBalance) {
+        this.loadBalance = 'true'
+      } else {
+        this.loadBalance = 'false'
+      }
     }
     if (this.topologyKeys !== '') {
-      if (!this.loadBalance) {
+      if (this.loadBalance === 'false') {
         throw new Error(' You need to enable Load Balance feature to use Topology Aware! ')
       }
     }
     this.ybServersRefreshInterval = Number(this.ybServersRefreshInterval)
-    if(isNaN(this.ybServersRefreshInterval) || !Number.isInteger(this.ybServersRefreshInterval)){
+    if (isNaN(this.ybServersRefreshInterval) || !Number.isInteger(this.ybServersRefreshInterval)) {
       throw new Error(' You need to Enter valid Refresh Interval ')
     }
-    if(this.ybServersRefreshInterval<0 || this.ybServersRefreshInterval>600){
+    if (this.ybServersRefreshInterval < 0 || this.ybServersRefreshInterval > 600) {
       this.ybServersRefreshInterval = 300
+    }
+    if (typeof this.fallbackToTopologyKeysOnly === 'string') {
+      this.fallbackToTopologyKeysOnly = this.fallbackToTopologyKeysOnly === 'true'
+    }
+    this.failedHostReconnectDelaySecs = Number(this.failedHostReconnectDelaySecs)
+    if (isNaN(this.failedHostReconnectDelaySecs) || !Number.isInteger(this.failedHostReconnectDelaySecs)) {
+      throw new Error('Enter a valid value for failedHostReconnectDelaySecs')
+    }
+    if (this.failedHostReconnectDelaySecs < 0 || this.failedHostReconnectDelaySecs > 60) {
+      this.failedHostReconnectDelaySecs = 5
     }
 
     // How to negotiate SSL: 'postgres' (default, the traditional SSLRequest
@@ -128,6 +157,7 @@ class ConnectionParameters {
     if (this.sslnegotiation === 'direct' && !this.ssl) {
       throw new Error('sslnegotiation=direct requires SSL to be enabled')
     }
+
     this.client_encoding = val('client_encoding', config)
     this.replication = val('replication', config)
     // a domain socket begins with '/'
@@ -169,6 +199,8 @@ class ConnectionParameters {
     add(params, this, 'loadBalance')
     add(params, this, 'topologyKeys')
     add(params, this, 'ybServersRefreshInterval')
+    add(params, this, 'fallbackToTopologyKeysOnly')
+    add(params, this, 'failedHostReconnectDelaySecs')
 
     const ssl = typeof this.ssl === 'object' ? this.ssl : this.ssl ? { sslmode: this.ssl } : {}
     add(params, ssl, 'sslmode')
