@@ -41,7 +41,7 @@
     "mocha": "^11.7.5"
   },
   "peerDependencies": {
-    "pg": ">=8.0"
+    "@yugabytedb/pg": "*"
   },
   "files": [
     "index.js",
