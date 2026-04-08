@@ -1,14 +1,12 @@
 'use strict'
-const helper = require('./test-helper')
-const pg = helper.pg
-const assert = require('assert')
-const { Client } = helper
+var helper = require('./test-helper')
+var pg = helper.pg
 
-const suite = new helper.Suite()
+var suite = new helper.Suite()
 
 // clear process.env
-const realEnv = {}
-for (const key in process.env) {
+var realEnv = {}
+for (var key in process.env) {
   realEnv[key] = process.env[key]
   if (!key.indexOf('PG')) delete process.env[key]
 }
@@ -18,7 +16,7 @@ suite.test('default values are used in new clients', function () {
     user: process.env.USER,
     database: undefined,
     password: null,
-    port: 5432,
+    port: 5433,
     rows: 0,
     max: 10,
     binary: false,
@@ -30,29 +28,29 @@ suite.test('default values are used in new clients', function () {
     parseInputDatesAsUTC: false,
   })
 
-  const client = new pg.Client()
+  var client = new pg.Client()
   assert.same(client, {
     user: process.env.USER,
-    password: null,
-    port: 5432,
     database: process.env.USER,
+    password: null,
+    port: 5433,
   })
 })
 
 suite.test('modified values are passed to created clients', function () {
   pg.defaults.user = 'boom'
   pg.defaults.password = 'zap'
-  pg.defaults.host = 'blam'
-  pg.defaults.port = 1234
   pg.defaults.database = 'pow'
+  pg.defaults.port = 1234
+  pg.defaults.host = 'blam'
 
-  const client = new Client()
+  var client = new Client()
   assert.same(client, {
     user: 'boom',
     password: 'zap',
-    host: 'blam',
-    port: 1234,
     database: 'pow',
+    port: 1234,
+    host: 'blam',
   })
 })
 
@@ -80,7 +78,7 @@ suite.test('database defaults to user when user is non-default', () => {
 
 suite.test('cleanup', () => {
   // restore process.env
-  for (const key in realEnv) {
+  for (var key in realEnv) {
     process.env[key] = realEnv[key]
   }
 })
