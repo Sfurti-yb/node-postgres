@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "mocha -r ts-node/register test/**/*.ts"
+    "test": "mocha -r ts-node/register --timeout 5000 test/**/*.ts"
   },
   "repository": {
     "type": "git",

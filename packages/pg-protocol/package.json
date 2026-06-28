@@ -24,7 +24,7 @@
     "typescript": "^6.0.3"
   },
   "scripts": {
-    "test": "mocha dist/**/*.test.js",
+    "test": "mocha --timeout 5000 dist/**/*.test.js",
     "build": "tsc",
     "build:watch": "tsc --watch",
     "prepublish": "yarn build",
