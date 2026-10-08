@@ -42,8 +42,6 @@
     "pg-protocol": "^1.16.0",
     "pg-types": "2.2.0",
     "pgpass": "1.0.5",
-    "pgpass": "1.x",
->>>>>>> 03e65bc (Changing upstream pg and pg-pool to respection yugabytedb versions (#12))
     "winston": "^3.14.2"
   },
   "devDependencies": {
